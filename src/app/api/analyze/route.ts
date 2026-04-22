@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { AnalyzeResult, ClipSegment } from "@/types/clip";
 
-const PROMPT = `You are a viral content strategist. Given a YouTube transcript, find exactly 10 engaging segments that would make great YouTube Shorts (30-60 seconds each).
+const PROMPT = `You are a viral content strategist. You will be provided with a YouTube transcript where each line starts with a timestamp in brackets, like this: [120.5] Here is the text.
+
+Find exactly 10 engaging segments that would make great YouTube Shorts (30-60 seconds each).
+
+CRITICAL RULES:
+Your 'start_time' and 'end_time' MUST be extracted directly from the [timestamp] brackets present in the text at the beginning and end of your chosen segment.
+Do not guess or make up the timestamps.
 
 Return ONLY a valid JSON array — no markdown, no code fences, no extra text. Each element must match this schema exactly:
 {
@@ -10,11 +16,9 @@ Return ONLY a valid JSON array — no markdown, no code fences, no extra text. E
   "title": "Short catchy title",
   "hook": "The compelling opening sentence",
   "reason": "Why this clip will go viral",
-  "start_time": 120,
-  "end_time": 165
+  "start_time": 120.5,
+  "end_time": 165.0
 }
-
-start_time and end_time are in seconds (number). Ensure each segment is 30-60 seconds long.
 
 Transcript:
 `;

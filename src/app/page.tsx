@@ -45,15 +45,15 @@ export default function Home() {
       setTranscript(tData.transcript);
       setStep("analyzing");
 
-      // 2. Analyze with Gemini
-      const fullText = tData.transcript
-        .map((l: TranscriptLine) => l.text)
-        .join(" ");
+      // 2. Analyze with Gemini — format transcript with timestamps
+      const formattedTranscript = tData.transcript
+        .map((l: TranscriptLine) => `[${l.offset}] ${l.text}`)
+        .join("\n");
 
       const aRes = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transcript: fullText }),
+        body: JSON.stringify({ transcript: formattedTranscript }),
       });
 
       const aData = await aRes.json();
