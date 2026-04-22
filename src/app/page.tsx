@@ -17,6 +17,37 @@ export default function Home() {
   const [errorMsg, setErrorMsg] = useState("");
   const [clips, setClips] = useState<ClipSegment[]>([]);
   const [transcript, setTranscript] = useState<TranscriptLine[] | null>(null);
+  const [triggeringId, setTriggeringId] = useState<string | null>(null);
+  const [triggeredIds, setTriggeredIds] = useState<Set<string>>(new Set());
+  const [notification, setNotification] = useState("");
+
+  async function handleCutClip(clip: ClipSegment) {
+    setTriggeringId(clip.id);
+    try {
+      const res = await fetch("/api/trigger-action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          videoUrl: url.trim(),
+          startTime: clip.start_time,
+          endTime: clip.end_time,
+          title: clip.title,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTriggeredIds((prev) => new Set(prev).add(clip.id));
+        setNotification("Sinyal terkirim! Video sedang dipotong di server");
+        setTimeout(() => setNotification(""), 4000);
+      } else {
+        alert("Gagal: " + data.error);
+      }
+    } catch {
+      alert("Gagal menghubungi server");
+    } finally {
+      setTriggeringId(null);
+    }
+  }
 
   async function handleAnalyze() {
     if (!url.trim()) return;
@@ -155,6 +186,13 @@ export default function Home() {
         </details>
       )}
 
+      {/* Notification */}
+      {notification && (
+        <div className="fixed top-6 right-6 z-50 rounded-lg border border-green-500/30 bg-green-500/10 backdrop-blur-sm px-5 py-3 text-sm text-green-400 shadow-lg animate-pulse">
+          {notification}
+        </div>
+      )}
+
       {/* Clip Cards */}
       {step === "done" && clips.length > 0 && (
         <div className="mt-10 w-full max-w-3xl">
@@ -186,8 +224,16 @@ export default function Home() {
                   &ldquo;{clip.hook}&rdquo;
                 </p>
                 <p className="text-xs text-gray-600 mb-4">{clip.reason}</p>
-                <button className="w-full rounded-lg border border-cyan-500/30 bg-cyan-500/10 py-2 text-sm font-medium text-cyan-400 hover:bg-cyan-500/20 transition">
-                  Cut This Clip
+                <button
+                  onClick={() => handleCutClip(clip)}
+                  disabled={triggeringId === clip.id || triggeredIds.has(clip.id)}
+                  className={`w-full rounded-lg border py-2 text-sm font-medium transition ${triggeredIds.has(clip.id) ? "border-green-500/30 bg-green-500/10 text-green-400" : "border-cyan-500/30 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20"} disabled:opacity-40 disabled:cursor-not-allowed`}
+                >
+                  {triggeredIds.has(clip.id)
+                    ? "✓ Sinyal Terkirim"
+                    : triggeringId === clip.id
+                      ? "Mengirim..."
+                      : "Cut This Clip"}
                 </button>
               </div>
             ))}

@@ -37,3 +37,14 @@ export interface AnalyzeError {
 }
 
 export type AnalyzeResult = AnalyzeResponse | AnalyzeError;
+
+export interface TriggerActionResponse {
+  success: true;
+}
+
+export interface TriggerActionError {
+  success: false;
+  error: string;
+}
+
+export type TriggerActionResult = TriggerActionResponse | TriggerActionError;
