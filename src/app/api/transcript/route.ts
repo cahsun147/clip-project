@@ -155,6 +155,44 @@ async function fetchFromPiped(videoId: string): Promise<TranscriptLine[]> {
   return parsed;
 }
 
+async function fetchFromInvidious(videoId: string): Promise<TranscriptLine[]> {
+  const instances = [
+    "https://inv.tux.pizza",
+    "https://invidious.weblibre.org",
+    "https://invidious.flokinet.to",
+    "https://invidious.perennialte.ch",
+  ];
+
+  let lastError = "";
+  for (const baseUrl of instances) {
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/videos/${videoId}`);
+      if (!res.ok) continue;
+
+      const data = await res.json();
+      if (!data.captions || data.captions.length === 0) continue;
+
+      // Prioritas: Indonesia -> Inggris -> Pertama (Support Auto-generated)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let sub = data.captions.find((c: any) => c.languageCode === "id" || c.label?.includes("Indonesian"));
+      if (!sub) sub = data.captions.find((c: any) => c.languageCode === "en" || c.label?.includes("English"));
+      if (!sub) sub = data.captions[0];
+
+      const vttUrl = sub.url.startsWith("http") ? sub.url : `${baseUrl}${sub.url}`;
+      const vttRes = await fetch(vttUrl);
+      if (!vttRes.ok) continue;
+
+      const vttText = await vttRes.text();
+      const parsed = parseVTT(vttText);
+      if (parsed.length > 0) return parsed;
+    } catch (err: unknown) {
+      lastError = err instanceof Error ? err.message : "fetch gagal";
+      continue;
+    }
+  }
+  throw new Error(`Semua instance Invidious gagal. Error: ${lastError}`);
+}
+
 export async function POST(request: NextRequest) {
   const body = await request.json();
   const url: string = body.url;
@@ -178,23 +216,25 @@ export async function POST(request: NextRequest) {
   let transcript: TranscriptLine[];
 
   try {
+    // Lapis 1: Coba module bawaan
     transcript = await YoutubeTranscript.fetchTranscript(videoId);
-
-    if (!transcript || transcript.length === 0) {
-      throw new Error("Transcript kosong dari youtube-transcript");
-    }
+    if (!transcript || transcript.length === 0) throw new Error("Transcript kosong");
   } catch (primaryErr: unknown) {
-    // youtube-transcript gagal (IP block, dll) — coba Piped API sebagai fallback
     try {
-      transcript = await fetchFromPiped(videoId);
-    } catch (fallbackErr: unknown) {
-      const primaryMsg = primaryErr instanceof Error ? primaryErr.message : "Gagal youtube-transcript";
-      const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : "Gagal Piped API";
-
-      return NextResponse.json<TranscriptResult>(
-        { success: false, error: `Utama: ${primaryMsg} | Fallback: ${fallbackMsg}` },
-        { status: 400 }
-      );
+      // Lapis 2: Invidious API (Support Auto-Generated)
+      transcript = await fetchFromInvidious(videoId);
+    } catch (invErr: unknown) {
+      try {
+        // Lapis 3: Piped API (Hanya manual subs)
+        transcript = await fetchFromPiped(videoId);
+      } catch (pipedErr: unknown) {
+        const msg1 = primaryErr instanceof Error ? primaryErr.message : "Gagal YT";
+        const msg2 = invErr instanceof Error ? invErr.message : "Gagal Invidious";
+        return NextResponse.json<TranscriptResult>(
+          { success: false, error: `Utama: ${msg1} | Invidious: ${msg2}` },
+          { status: 400 }
+        );
+      }
     }
   }
 
