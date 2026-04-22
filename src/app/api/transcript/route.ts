@@ -89,6 +89,15 @@ function parseVTT(vttText: string): TranscriptLine[] {
   return result;
 }
 
+const fetchOptions: RequestInit = {
+  headers: {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9,id;q=0.8",
+  },
+  cache: "no-store",
+};
+
 const PIPED_INSTANCES = [
   "https://pipedapi.smnz.de",
   "https://api.piped.projectsegfau.lt",
@@ -102,7 +111,8 @@ async function fetchFromPiped(videoId: string): Promise<TranscriptLine[]> {
   for (const instance of PIPED_INSTANCES) {
     try {
       const pipedRes = await fetch(
-        `${instance}/streams/${videoId}`
+        `${instance}/streams/${videoId}`,
+        fetchOptions
       );
       if (!pipedRes.ok) {
         lastError = `${instance} → ${pipedRes.status}`;
@@ -140,7 +150,7 @@ async function fetchFromPiped(videoId: string): Promise<TranscriptLine[]> {
     sub = data.subtitles[0];
   }
 
-  const vttRes = await fetch(sub.url);
+  const vttRes = await fetch(sub.url, fetchOptions);
   if (!vttRes.ok) {
     throw new Error(`Gagal mengambil file VTT: ${vttRes.status}`);
   }
@@ -166,7 +176,7 @@ async function fetchFromInvidious(videoId: string): Promise<TranscriptLine[]> {
   let lastError = "";
   for (const baseUrl of instances) {
     try {
-      const res = await fetch(`${baseUrl}/api/v1/videos/${videoId}`);
+      const res = await fetch(`${baseUrl}/api/v1/videos/${videoId}`, fetchOptions);
       if (!res.ok) continue;
 
       const data = await res.json();
@@ -179,7 +189,7 @@ async function fetchFromInvidious(videoId: string): Promise<TranscriptLine[]> {
       if (!sub) sub = data.captions[0];
 
       const vttUrl = sub.url.startsWith("http") ? sub.url : `${baseUrl}${sub.url}`;
-      const vttRes = await fetch(vttUrl);
+      const vttRes = await fetch(vttUrl, fetchOptions);
       if (!vttRes.ok) continue;
 
       const vttText = await vttRes.text();
