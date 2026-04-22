@@ -1,0 +1,59 @@
+# 🚀 CLIP PROJECT - WINDSURF SYSTEM INSTRUCTIONS
+
+## 1. PROJECT OVERVIEW
+You are building "CLIP Project", a YouTube-to-Shorts clipping web application. 
+The architecture is strictly divided into two parts:
+- **Frontend & Orchestration (Vercel)**: Next.js App Router for UI, transcript fetching, and AI analysis.
+- **Heavy Processing (GitHub Actions)**: Handled externally. Next.js ONLY triggers the action. NEVER perform video downloading or FFmpeg processing inside the Next.js API routes due to serverless timeout limits.
+
+## 2. TECH STACK & LIBRARIES
+- Framework: Next.js (App Router, React server/client components separated correctly).
+- Styling: Tailwind CSS.
+- Language: TypeScript (Strict mode enabled).
+- Transcript: `youtube-transcript` (Must use this, DO NOT use YouTube Data API v3 to keep it free).
+- AI/LLM: `@google/generative-ai` (Gemini API).
+
+## 3. CORE LOGIC & STRICT CONSTRAINTS
+
+### A. Transcript Fetching (`/api/transcript`)
+- Receive YouTube URL.
+- Extract video ID safely (handle various YouTube URL formats: youtu.be, youtube.com/watch, shorts).
+- Fetch using `YoutubeTranscript.fetchTranscript(videoId)`.
+- Error Handling: Return graceful error if CC is disabled or video is private.
+
+### B. AI Analysis (`/api/analyze`)
+- Receive the raw transcript text.
+- Initialize GoogleGenerativeAI with `process.env.GEMINI_API_KEY`.
+- Model to use: `gemini-1.5-flash` (for speed and context length).
+- **Prompt Engineering Requirement**: Instruct Gemini to act as a viral content strategist. Find 10 engaging segments (30-60 seconds each).
+- **CRITICAL**: The AI MUST output ONLY a valid JSON array. Do not include markdown formatting like ```json in the final parsed response.
+- **Expected JSON Schema**:
+  [
+    {
+      "id": "unique-id-1",
+      "title": "Short catchy title",
+      "hook": "The compelling opening sentence",
+      "reason": "Why this clip will go viral",
+      "start_time": 120, // in seconds (number)
+      "end_time": 165 // in seconds (number)
+    }
+  ]
+
+### C. GitHub Actions Trigger (`/api/trigger-action`)
+- Trigger a `repository_dispatch` event to GitHub API.
+- Use `process.env.GITHUB_PAT` (Personal Access Token).
+- Payload must send: `youtube_url`, `start_time`, `end_time`, `title`.
+
+## 4. UI/UX DESIGN GUIDELINES
+- **Theme**: Stealth/Dark mode first (bg-gray-950, text-gray-200). Incorporate subtle glassmorphism effects (backdrop-blur) and sleek, futuristic accents (like cyan or neon green borders) for a clean, developer-focused aesthetic.
+- **Priority**: Functionality over complex animations for the MVP.
+- **Components**: 
+  1. Centered, clean input field for YouTube URL.
+  2. Loading states (Skeleton or spinner) while fetching transcripts and waiting for Gemini.
+  3. A grid or list of "Clip Cards" displaying the Title, Hook, Duration, and a "Cut This Clip" button.
+
+## 5. DEVELOPMENT RULES
+- Write clean, modular TypeScript code. Define interfaces/types for all API responses.
+- Keep Client Components (`"use client"`) only for interactive UI parts. Use Server Components where possible.
+- If a package is missing, explicitly ask the user to run `npm install <package-name>`.
+- Do NOT guess environment variables. Assume `.env.local` will have `GEMINI_API_KEY` and `GITHUB_PAT`.
