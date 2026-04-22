@@ -76,8 +76,8 @@ function parseVTT(vttText: string): TranscriptLine[] {
     if (textParts.length > 0) {
       result.push({
         text: textParts.join(" "),
-        offset: startMs,
-        duration: endMs - startMs,
+        offset: startMs / 1000,
+        duration: (endMs - startMs) / 1000,
       });
     }
   }
@@ -85,19 +85,36 @@ function parseVTT(vttText: string): TranscriptLine[] {
   return result;
 }
 
-async function fetchFromPiped(videoId: string): Promise<TranscriptLine[]> {
-  const pipedRes = await fetch(
-    `https://pipedapi.kavin.rocks/streams/${videoId}`
-  );
+const PIPED_INSTANCES = [
+  "https://pipedapi.smnz.de",
+  "https://api.piped.projectsegfau.lt",
+  "https://piped-api.lunar.icu",
+];
 
-  if (!pipedRes.ok) {
-    throw new Error(`Piped API error: ${pipedRes.status}`);
+async function fetchFromPiped(videoId: string): Promise<TranscriptLine[]> {
+  let data: PipedStreamResponse | null = null;
+  let lastError: string = "";
+
+  for (const instance of PIPED_INSTANCES) {
+    try {
+      const pipedRes = await fetch(
+        `${instance}/streams/${videoId}`
+      );
+      if (!pipedRes.ok) {
+        lastError = `${instance} → ${pipedRes.status}`;
+        continue;
+      }
+      data = await pipedRes.json();
+      if (data?.subtitles && data.subtitles.length > 0) break;
+      lastError = `${instance} → tidak ada subtitle`;
+    } catch (e) {
+      lastError = `${instance} → ${e instanceof Error ? e.message : "fetch gagal"}`;
+      continue;
+    }
   }
 
-  const data: PipedStreamResponse = await pipedRes.json();
-
-  if (!data.subtitles || data.subtitles.length === 0) {
-    throw new Error("Tidak ada subtitle di Piped API");
+  if (!data?.subtitles || data.subtitles.length === 0) {
+    throw new Error(`Semua instance Piped gagal. Terakhir: ${lastError}`);
   }
 
   // Prioritas: Indonesia > Inggris > auto-generated > subtitle pertama
@@ -167,26 +184,12 @@ export async function POST(request: NextRequest) {
     try {
       transcript = await fetchFromPiped(videoId);
     } catch (fallbackErr: unknown) {
-      const primaryMsg =
-        primaryErr instanceof Error ? primaryErr.message : "Gagal mengambil transcript";
-      const fallbackMsg =
-        fallbackErr instanceof Error ? fallbackErr.message : "Fallback juga gagal";
-
-      const lower = primaryMsg.toLowerCase();
-      if (
-        lower.includes("disabled") ||
-        lower.includes("could not") ||
-        lower.includes("no transcript")
-      ) {
-        return NextResponse.json<TranscriptResult>(
-          { success: false, error: "Video ini tidak memiliki subtitle/CC yang bisa ditarik. Coba video lain." },
-          { status: 400 }
-        );
-      }
+      const primaryMsg = primaryErr instanceof Error ? primaryErr.message : "Gagal youtube-transcript";
+      const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : "Gagal Piped API";
 
       return NextResponse.json<TranscriptResult>(
-        { success: false, error: `Gagal mengambil transcript: ${primaryMsg} | Fallback: ${fallbackMsg}` },
-        { status: 500 }
+        { success: false, error: `Utama: ${primaryMsg} | Fallback: ${fallbackMsg}` },
+        { status: 400 }
       );
     }
   }
