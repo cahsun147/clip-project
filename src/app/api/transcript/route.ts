@@ -46,28 +46,32 @@ interface PipedStreamResponse {
 function parseVTT(vttText: string): TranscriptLine[] {
   const lines = vttText.split("\n");
   const result: TranscriptLine[] = [];
-  const timestampRe = /(\d+):(\d{2}):(\d{2})[.](\d{3})\s-->\s(\d+):(\d{2}):(\d{2})[.](\d{3})/;
+  const timestampRe = /([0-9:.]+)\s-->\s([0-9:.]+)/;
+
+  function parseTime(timeStr: string): number {
+    const parts = timeStr.trim().split(':');
+    let secs = 0;
+    if (parts.length === 3) {
+      // HH:MM:SS.mmm
+      secs = parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseFloat(parts[2]);
+    } else if (parts.length === 2) {
+      // MM:SS.mmm
+      secs = parseInt(parts[0]) * 60 + parseFloat(parts[1]);
+    }
+    return secs;
+  }
 
   for (let i = 0; i < lines.length; i++) {
     const match = timestampRe.exec(lines[i]);
     if (!match) continue;
 
-    const startMs =
-      parseInt(match[1]) * 3600000 +
-      parseInt(match[2]) * 60000 +
-      parseInt(match[3]) * 1000 +
-      parseInt(match[4]);
-    const endMs =
-      parseInt(match[5]) * 3600000 +
-      parseInt(match[6]) * 60000 +
-      parseInt(match[7]) * 1000 +
-      parseInt(match[8]);
+    const startSecs = parseTime(match[1]);
+    const endSecs = parseTime(match[2]);
 
-    // Collect text lines until next blank line
     const textParts: string[] = [];
     let j = i + 1;
-    while (j < lines.length && lines[j].trim() !== "") {
-      // Skip position/alignment tags like <00:00:01.000>
+    // Baca baris teks sampai ketemu baris kosong atau panah waktu berikutnya
+    while (j < lines.length && lines[j].trim() !== "" && !lines[j].includes("-->")) {
       const cleaned = lines[j].replace(/<[^>]+>/g, "").trim();
       if (cleaned) textParts.push(cleaned);
       j++;
@@ -76,8 +80,8 @@ function parseVTT(vttText: string): TranscriptLine[] {
     if (textParts.length > 0) {
       result.push({
         text: textParts.join(" "),
-        offset: startMs / 1000,
-        duration: (endMs - startMs) / 1000,
+        offset: startSecs,
+        duration: endSecs - startSecs,
       });
     }
   }
