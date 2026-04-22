@@ -1,0 +1,37 @@
+name: Cut Video Clips
+
+on:
+  repository_dispatch:
+    types: [cut_video]
+
+jobs:
+  process-clip:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🚀 Menerima Sinyal Vercel
+        run: |
+          echo "Memproses video: ${{ github.event.client_payload.title }}"
+          echo "URL: ${{ github.event.client_payload.video_url }}"
+          echo "Start: ${{ github.event.client_payload.start_time }}"
+          echo "End: ${{ github.event.client_payload.end_time }}"
+
+      - name: ⚙️ Install yt-dlp & FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+          sudo chmod a+rx /usr/local/bin/yt-dlp
+
+      - name: ✂️ Download & Cut Video (Cepat)
+        run: |
+          yt-dlp -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
+          --download-sections "*${{ github.event.client_payload.start_time }}-${{ github.event.client_payload.end_time }}" \
+          --force-keyframes-at-cuts \
+          -o "output_clip.mp4" \
+          "${{ github.event.client_payload.video_url }}"
+
+      - name: 📤 Upload Hasil Video
+        uses: actions/upload-artifact@v4
+        with:
+          name: clip-${{ github.event.client_payload.start_time }}
+          path: output_clip.mp4
