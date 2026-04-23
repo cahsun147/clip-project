@@ -139,46 +139,67 @@ async function downloadAndParseArtifact(
 
   const zipBuffer = Buffer.from(await zipRes.arrayBuffer());
 
-  // Parse zip to find transcript.json — use simple zip parsing
+  // Parse zip using central directory (reliable sizes) instead of local headers
   try {
     const fileName = "transcript.json";
-
-    // Search for local file header signature (PK\x03\x04)
-    let jsonContent: string | null = null;
-    let offset = 0;
     const buf = zipBuffer;
 
-    while (offset < buf.length - 30) {
-      // Check for local file header signature
-      if (buf[offset] === 0x50 && buf[offset + 1] === 0x4b && buf[offset + 2] === 0x03 && buf[offset + 3] === 0x04) {
-        const nameLen = buf.readUInt16LE(offset + 26);
-        const extraLen = buf.readUInt16LE(offset + 28);
-        const compMethod = buf.readUInt16LE(offset + 8);
-        const compSize = buf.readUInt32LE(offset + 18);
-        const uncompSize = buf.readUInt32LE(offset + 22);
-        const nameStart = offset + 30;
-        const entryName = buf.subarray(nameStart, nameStart + nameLen).toString("utf8");
-
-        if (entryName === fileName && uncompSize > 0) {
-          const dataStart = nameStart + nameLen + extraLen;
-          const compressedData = buf.subarray(dataStart, dataStart + compSize);
-
-          if (compMethod === 0) {
-            // Stored (no compression)
-            jsonContent = compressedData.toString("utf8");
-          } else if (compMethod === 8) {
-            // Deflate compression
-            const decompressed = inflateRawSync(compressedData);
-            jsonContent = decompressed.toString("utf8");
-          }
-          break;
-        }
-
-        // Skip to next entry
-        offset = nameStart + nameLen + extraLen + compSize;
-      } else {
-        offset++;
+    // Find End of Central Directory record (PK\x05\x06) — search from end
+    let eocdOffset = -1;
+    for (let i = buf.length - 22; i >= 0; i--) {
+      if (buf[i] === 0x50 && buf[i + 1] === 0x4b && buf[i + 2] === 0x05 && buf[i + 3] === 0x06) {
+        eocdOffset = i;
+        break;
       }
+    }
+
+    if (eocdOffset < 0) {
+      return NextResponse.json({
+        success: false,
+        status: "error",
+        error: "Format zip tidak valid (EOCD tidak ditemukan)",
+      });
+    }
+
+    const cdOffset = buf.readUInt32LE(eocdOffset + 16); // central directory offset
+    const cdEntries = buf.readUInt16LE(eocdOffset + 10); // total entries
+
+    // Scan central directory entries to find transcript.json
+    let jsonContent: string | null = null;
+    let cdPos = cdOffset;
+
+    for (let e = 0; e < cdEntries; e++) {
+      if (buf[cdPos] !== 0x50 || buf[cdPos + 1] !== 0x4b || buf[cdPos + 2] !== 0x01 || buf[cdPos + 3] !== 0x02) {
+        break;
+      }
+
+      const compMethod = buf.readUInt16LE(cdPos + 10);
+      const compSize = buf.readUInt32LE(cdPos + 20);
+      const uncompSize = buf.readUInt32LE(cdPos + 24);
+      const nameLen = buf.readUInt16LE(cdPos + 28);
+      const extraLen = buf.readUInt16LE(cdPos + 30);
+      const commentLen = buf.readUInt16LE(cdPos + 32);
+      const localHeaderOffset = buf.readUInt32LE(cdPos + 42);
+
+      const entryName = buf.subarray(cdPos + 46, cdPos + 46 + nameLen).toString("utf8");
+
+      if (entryName === fileName && uncompSize > 0) {
+        // Read from local file header using offset from central directory
+        const localExtraLen = buf.readUInt16LE(localHeaderOffset + 28);
+        const localNameLen = buf.readUInt16LE(localHeaderOffset + 26);
+        const dataStart = localHeaderOffset + 30 + localNameLen + localExtraLen;
+        const compressedData = buf.subarray(dataStart, dataStart + compSize);
+
+        if (compMethod === 0) {
+          jsonContent = compressedData.toString("utf8");
+        } else if (compMethod === 8) {
+          const decompressed = inflateRawSync(compressedData);
+          jsonContent = decompressed.toString("utf8");
+        }
+        break;
+      }
+
+      cdPos += 46 + nameLen + extraLen + commentLen;
     }
 
     if (!jsonContent) {

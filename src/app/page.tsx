@@ -87,9 +87,16 @@ export default function Home() {
         const rRes = await fetch(`/api/transcript-result?requestId=${requestId}`);
         const rData = await rRes.json();
 
-        if (rData.status === "done" && rData.success) {
+        if (rData.status === "done" && rData.success && Array.isArray(rData.transcript)) {
           transcriptData = rData.transcript;
           break;
+        }
+
+        if (rData.status === "done" && (!rData.transcript || !Array.isArray(rData.transcript))) {
+          // transcript kosong/corrupt — anggap error
+          setStep("error");
+          setErrorMsg(rData.error || "Transcript kosong atau format tidak valid");
+          return;
         }
 
         if (rData.status === "failed" || rData.status === "error") {
