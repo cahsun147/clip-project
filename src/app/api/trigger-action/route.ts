@@ -57,6 +57,7 @@ export async function POST(request: NextRequest) {
             start_time: startTime,
             end_time: endTime,
             title,
+            job_id: crypto.randomUUID(),
           },
         }),
       }

@@ -12,8 +12,52 @@ jobs:
         run: |
           echo "Memproses video: ${{ github.event.client_payload.title }}"
           echo "URL: ${{ github.event.client_payload.video_url }}"
-          echo "Start: ${{ github.event.client_payload.start_time }}"
-          echo "End: ${{ github.event.client_payload.end_time }}"
+          
+          VIDEO_URL="${{ github.event.client_payload.video_url }}"
+          VIDEO_ID=$(echo "$VIDEO_URL" | grep -oP '(?<=v=)[^&]+' || echo "$VIDEO_URL" | grep -oP '(?<=youtu\.be/)[^?&]+')
+          echo "VIDEO_ID_EXTRACTED=$VIDEO_ID" >> $GITHUB_ENV
+
+      - name: ⚙️ Install Python & youtube-transcript-api
+        run: |
+          pip3 install "youtube-transcript-api>=1.2.0" --break-system-packages
+
+      - name: 📝 Ambil Transcript YouTube
+        run: |
+          python3 << 'EOF'
+          import json, os, sys
+          from youtube_transcript_api import YouTubeTranscriptApi
+          
+          video_id = os.environ.get('VIDEO_ID_EXTRACTED', '')
+          
+          try:
+              ytt_api = YouTubeTranscriptApi()
+              try:
+                  raw = ytt_api.fetch(video_id, languages=['id']).to_raw_data()
+              except Exception:
+                  raw = ytt_api.fetch(video_id, languages=['en']).to_raw_data()
+              
+              formatted = [
+                  {"text": i['text'], "offset": i['start'], "duration": i['duration']}
+                  for i in raw
+              ]
+              result = {"success": True, "videoId": video_id, "transcript": formatted}
+          except Exception as e:
+              result = {"success": False, "error": str(e)}
+          
+          with open("transcript.json", "w", encoding="utf-8") as f:
+              json.dump(result, f, ensure_ascii=False, indent=2)
+          
+          print(json.dumps(result, ensure_ascii=False)[:500])
+          EOF
+        env:
+          VIDEO_ID_EXTRACTED: ${{ env.VIDEO_ID_EXTRACTED }}
+
+      - name: 📤 Upload Transcript Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: transcript-${{ github.run_id }}
+          path: transcript.json
+          retention-days: 1
 
       - name: ⚙️ Install yt-dlp & FFmpeg
         run: |

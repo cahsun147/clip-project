@@ -1,2 +1,2 @@
-Flask
-youtube-transcript-api
+flask
+youtube-transcript-api>=1.2.0
