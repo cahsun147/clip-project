@@ -58,7 +58,7 @@ export default function Home() {
     setTranscript(null);
 
     try {
-      // 1. Fetch transcript
+      // 1. Trigger GitHub Actions to fetch transcript
       const tRes = await fetch("/api/transcript", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -73,11 +73,45 @@ export default function Home() {
         return;
       }
 
-      setTranscript(tData.transcript);
+      const requestId = tData.requestId;
+
+      // 2. Poll until transcript is ready
+      let transcriptData: TranscriptLine[] | null = null;
+      const maxAttempts = 60; // 60 × 3s = 3 menit max
+      let attempt = 0;
+
+      while (attempt < maxAttempts) {
+        await new Promise((r) => setTimeout(r, 3000)); // tunggu 3 detik
+        attempt++;
+
+        const rRes = await fetch(`/api/transcript-result?requestId=${requestId}`);
+        const rData = await rRes.json();
+
+        if (rData.status === "done" && rData.success) {
+          transcriptData = rData.transcript;
+          break;
+        }
+
+        if (rData.status === "failed" || rData.status === "error") {
+          setStep("error");
+          setErrorMsg(rData.error || "Gagal mengambil transcript dari GitHub Actions");
+          return;
+        }
+
+        // status === "pending" | "running" → lanjut polling
+      }
+
+      if (!transcriptData) {
+        setStep("error");
+        setErrorMsg("Timeout: Transcript fetch memakan waktu terlalu lama");
+        return;
+      }
+
+      setTranscript(transcriptData);
       setStep("analyzing");
 
-      // 2. Analyze with Gemini — format transcript with timestamps
-      const formattedTranscript = tData.transcript
+      // 3. Analyze with Gemini
+      const formattedTranscript = transcriptData
         .map((l: TranscriptLine) => `[${l.offset}] ${l.text}`)
         .join("\n");
 
@@ -161,7 +195,7 @@ export default function Home() {
           </svg>
           <span className="text-sm">
             {step === "fetching"
-              ? "Mengambil transcript dari YouTube..."
+              ? "Mengambil transcript via GitHub Actions (±15-30 detik)..."
               : "Gemini sedang menganalisis segmen viral..."}
           </span>
         </div>

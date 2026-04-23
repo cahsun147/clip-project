@@ -1,12 +1,5 @@
 {
   "builds": [
-    { "src": "package.json", "use": "@vercel/next" },
-    { "src": "api/**/*.py", "use": "@vercel/python" }
-  ],
-  "rewrites": [
-    {
-      "source": "/api/transcript",
-      "destination": "/api/transcript.py"
-    }
+    { "src": "package.json", "use": "@vercel/next" }
   ]
 }
