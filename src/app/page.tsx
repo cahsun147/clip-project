@@ -20,6 +20,7 @@ export default function Home() {
   const [triggeringId, setTriggeringId] = useState<string | null>(null);
   const [triggeredIds, setTriggeredIds] = useState<Set<string>>(new Set());
   const [notification, setNotification] = useState("");
+  const [useLocal, setUseLocal] = useState(false);
 
   async function handleCutClip(clip: ClipSegment) {
     setTriggeringId(clip.id);
@@ -58,60 +59,77 @@ export default function Home() {
     setTranscript(null);
 
     try {
-      // 1. Trigger GitHub Actions to fetch transcript
-      const tRes = await fetch("/api/transcript", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: url.trim() }),
-      });
-
-      const tData = await tRes.json();
-
-      if (!tData.success) {
-        setStep("error");
-        setErrorMsg(tData.error);
-        return;
-      }
-
-      const requestId = tData.requestId;
-
-      // 2. Poll until transcript is ready
       let transcriptData: TranscriptLine[] | null = null;
-      const maxAttempts = 60; // 60 × 3s = 3 menit max
-      let attempt = 0;
 
-      while (attempt < maxAttempts) {
-        await new Promise((r) => setTimeout(r, 3000)); // tunggu 3 detik
-        attempt++;
+      if (useLocal) {
+        // === LOCAL MODE: langsung ambil transcript via Flask ===
+        const tRes = await fetch("/api/transcript-local", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: url.trim() }),
+        });
 
-        const rRes = await fetch(`/api/transcript-result?requestId=${requestId}`);
-        const rData = await rRes.json();
+        const tData = await tRes.json();
 
-        if (rData.status === "done" && rData.success && Array.isArray(rData.transcript)) {
-          transcriptData = rData.transcript;
-          break;
-        }
-
-        if (rData.status === "done" && (!rData.transcript || !Array.isArray(rData.transcript))) {
-          // transcript kosong/corrupt — anggap error
+        if (!tData.success) {
           setStep("error");
-          setErrorMsg(rData.error || "Transcript kosong atau format tidak valid");
+          setErrorMsg(tData.error);
           return;
         }
 
-        if (rData.status === "failed" || rData.status === "error") {
+        transcriptData = tData.transcript;
+      } else {
+        // === GITHUB ACTIONS MODE: trigger + polling ===
+        const tRes = await fetch("/api/transcript", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: url.trim() }),
+        });
+
+        const tData = await tRes.json();
+
+        if (!tData.success) {
           setStep("error");
-          setErrorMsg(rData.error || "Gagal mengambil transcript dari GitHub Actions");
+          setErrorMsg(tData.error);
           return;
         }
 
-        // status === "pending" | "running" → lanjut polling
-      }
+        const requestId = tData.requestId;
 
-      if (!transcriptData) {
-        setStep("error");
-        setErrorMsg("Timeout: Transcript fetch memakan waktu terlalu lama");
-        return;
+        // Poll until transcript is ready
+        const maxAttempts = 60;
+        let attempt = 0;
+
+        while (attempt < maxAttempts) {
+          await new Promise((r) => setTimeout(r, 3000));
+          attempt++;
+
+          const rRes = await fetch(`/api/transcript-result?requestId=${requestId}`);
+          const rData = await rRes.json();
+
+          if (rData.status === "done" && rData.success && Array.isArray(rData.transcript)) {
+            transcriptData = rData.transcript;
+            break;
+          }
+
+          if (rData.status === "done" && (!rData.transcript || !Array.isArray(rData.transcript))) {
+            setStep("error");
+            setErrorMsg(rData.error || "Transcript kosong atau format tidak valid");
+            return;
+          }
+
+          if (rData.status === "failed" || rData.status === "error") {
+            setStep("error");
+            setErrorMsg(rData.error || "Gagal mengambil transcript dari GitHub Actions");
+            return;
+          }
+        }
+
+        if (!transcriptData) {
+          setStep("error");
+          setErrorMsg("Timeout: Transcript fetch memakan waktu terlalu lama");
+          return;
+        }
       }
 
       setTranscript(transcriptData);
@@ -153,6 +171,25 @@ export default function Home() {
       <p className="text-gray-500 mb-10 text-center max-w-md">
         Temukan momen viral dari video YouTube dan ubah jadi Shorts.
       </p>
+
+      {/* Mode Toggle */}
+      <div className="w-full max-w-xl flex items-center justify-end gap-2 mb-3">
+        <span className={`text-xs ${!useLocal ? "text-cyan-400" : "text-gray-600"}`}>
+          GitHub Actions
+        </span>
+        <button
+          onClick={() => setUseLocal((v) => !v)}
+          className={`relative w-10 h-5 rounded-full transition-colors ${useLocal ? "bg-green-500" : "bg-gray-700"}`}
+          title={useLocal ? "Mode: Local (Flask)" : "Mode: GitHub Actions"}
+        >
+          <span
+            className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${useLocal ? "translate-x-5" : ""}`}
+          />
+        </button>
+        <span className={`text-xs ${useLocal ? "text-green-400" : "text-gray-600"}`}>
+          Local (Flask)
+        </span>
+      </div>
 
       {/* Input */}
       <div className="w-full max-w-xl flex gap-3">
@@ -202,7 +239,9 @@ export default function Home() {
           </svg>
           <span className="text-sm">
             {step === "fetching"
-              ? "Mengambil transcript via GitHub Actions (±15-30 detik)..."
+              ? useLocal
+                ? "Mengambil transcript via Flask lokal..."
+                : "Mengambil transcript via GitHub Actions (±15-30 detik)..."
               : "Gemini sedang menganalisis segmen viral..."}
           </span>
         </div>

@@ -1,9 +1,11 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import re
 import os
 import random
 
 app = Flask(__name__)
+CORS(app)
 
 def extract_video_id(url):
     match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11}).*", url)
@@ -140,3 +142,9 @@ def get_transcript():
         return jsonify({"success": True, "videoId": video_id, "transcript": formatted})
     except Exception as e:
         return jsonify({"success": False, "error": f"Gagal memformat teks: {str(e)}"}), 500
+
+if __name__ == '__main__':
+    port = int(os.environ.get('FLASK_PORT', 5001))
+    print(f"\nFlask transcript server berjalan di http://127.0.0.1:{port}")
+    print(f"   Endpoint: POST http://127.0.0.1:{port}/api/transcript")
+    app.run(host='127.0.0.1', port=port, debug=True)

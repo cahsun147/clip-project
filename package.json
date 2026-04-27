@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:flask": "python api/transcript.py",
+    "dev:local": "npx concurrently -n next,flask -c cyan,green \"next dev\" \"python api/transcript.py\"",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
