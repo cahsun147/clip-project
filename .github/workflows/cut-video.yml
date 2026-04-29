@@ -33,8 +33,19 @@ jobs:
       - name: 🍪 Siapkan YouTube Cookies
         if: ${{ secrets.YOUTUBE_COOKIES != '' }}
         run: |
-          echo "${{ secrets.YOUTUBE_COOKIES }}" > cookies.txt
-          echo "Cookies file berhasil dibuat"
+          cat << 'COOKIEEOF' > cookies.txt
+          ${{ secrets.YOUTUBE_COOKIES }}
+          COOKIEEOF
+          # Validasi format cookies
+          if head -1 cookies.txt | grep -q 'Netscape'; then
+            echo "Cookies file valid ($(wc -l < cookies.txt) baris)"
+          else
+            echo "WARNING: Header Netscape tidak ditemukan, menambahkan..."
+            sed -i '1i# Netscape HTTP Cookie File
+# https://curl.haxx.se/rfc/cookie_spec.html
+# This is a generated file! Do not edit.
+' cookies.txt
+          fi
 
       - name: ✂️ Download & Cut Video
         run: |
