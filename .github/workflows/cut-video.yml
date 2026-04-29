@@ -30,14 +30,61 @@ jobs:
           sudo chmod a+rx /usr/local/bin/yt-dlp
           yt-dlp --version
 
+      - name: 🍪 Siapkan YouTube Cookies
+        if: ${{ secrets.YOUTUBE_COOKIES != '' }}
+        run: |
+          echo "${{ secrets.YOUTUBE_COOKIES }}" > cookies.txt
+          echo "Cookies file berhasil dibuat"
+
       - name: ✂️ Download & Cut Video
         run: |
           START="${{ github.event.client_payload.start_time }}"
           END="${{ github.event.client_payload.end_time }}"
           VIDEO_URL="${{ github.event.client_payload.video_url }}"
+          COOKIES_FLAG=""
+          if [ -f cookies.txt ]; then
+            COOKIES_FLAG="--cookies cookies.txt"
+            echo "Menggunakan YouTube cookies"
+          fi
 
-          # Strategi 1: Tanpa proxy (deno sudah diinstall, yt-dlp bisa bypass bot detection)
-          echo "=== Mencoba: Tanpa Proxy ==="
+          # Strategi 1: Cookies + tanpa proxy
+          if [ -n "$COOKIES_FLAG" ]; then
+            echo "=== Mencoba: Cookies + Tanpa Proxy ==="
+            if yt-dlp -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
+                $COOKIES_FLAG \
+                --download-sections "*${START}-${END}" \
+                --force-keyframes-at-cuts \
+                --extractor-retries 3 \
+                --retry-sleep extractor:5 \
+                -o "output_clip.mp4" \
+                "$VIDEO_URL"; then
+              echo "Download berhasil dengan cookies!"
+              exit 0
+            fi
+            echo "Cookies tanpa proxy gagal, mencoba cookies + proxy..."
+          fi
+
+          # Strategi 2: Cookies + proxy via env var
+          if [ -n "$COOKIES_FLAG" ] && [ -n "${{ secrets.WEBSHARE_PROXY_URL }}" ]; then
+            echo "=== Mencoba: Cookies + Proxy (env var) ==="
+            export HTTPS_PROXY="${{ secrets.WEBSHARE_PROXY_URL }}"
+            export HTTP_PROXY="${{ secrets.WEBSHARE_PROXY_URL }}"
+            if yt-dlp -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
+                $COOKIES_FLAG \
+                --download-sections "*${START}-${END}" \
+                --force-keyframes-at-cuts \
+                --extractor-retries 3 \
+                --retry-sleep extractor:5 \
+                -o "output_clip.mp4" \
+                "$VIDEO_URL"; then
+              echo "Download berhasil dengan cookies + proxy!"
+              exit 0
+            fi
+            echo "Cookies + proxy juga gagal!"
+          fi
+
+          # Strategi 3: Tanpa cookies, tanpa proxy (fallback terakhir)
+          echo "=== Mencoba: Tanpa Cookies, Tanpa Proxy ==="
           if yt-dlp -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
               --download-sections "*${START}-${END}" \
               --force-keyframes-at-cuts \
@@ -45,32 +92,10 @@ jobs:
               --retry-sleep extractor:5 \
               -o "output_clip.mp4" \
               "$VIDEO_URL"; then
-            echo "Download berhasil tanpa proxy!"
+            echo "Download berhasil tanpa cookies!"
           else
-            echo "Tanpa proxy gagal, mencoba dengan proxy..."
-
-            # Strategi 2: Dengan proxy via HTTPS_PROXY env var
-            # urllib menangani proxy auth dengan benar via env var, bukan --proxy flag
-            if [ -n "${{ secrets.WEBSHARE_PROXY_URL }}" ]; then
-              echo "=== Mencoba: Dengan Proxy (env var) ==="
-              export HTTPS_PROXY="${{ secrets.WEBSHARE_PROXY_URL }}"
-              export HTTP_PROXY="${{ secrets.WEBSHARE_PROXY_URL }}"
-              if yt-dlp -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
-                  --download-sections "*${START}-${END}" \
-                  --force-keyframes-at-cuts \
-                  --extractor-retries 3 \
-                  --retry-sleep extractor:5 \
-                  -o "output_clip.mp4" \
-                  "$VIDEO_URL"; then
-                echo "Download berhasil dengan proxy!"
-              else
-                echo "Proxy juga gagal!"
-                exit 1
-              fi
-            else
-              echo "Tidak ada proxy secret yang dikonfigurasi."
-              exit 1
-            fi
+            echo "Semua strategi gagal!"
+            exit 1
           fi
 
       - name: 📤 Upload Hasil Video
