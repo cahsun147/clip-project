@@ -12,74 +12,62 @@ jobs:
         run: |
           echo "Memproses video: ${{ github.event.client_payload.title }}"
           echo "URL: ${{ github.event.client_payload.video_url }}"
-          
-          VIDEO_URL="${{ github.event.client_payload.video_url }}"
-          VIDEO_ID=$(echo "$VIDEO_URL" | grep -oP '(?<=v=)[^&]+' || echo "$VIDEO_URL" | grep -oP '(?<=youtu\.be/)[^?&]+')
-          echo "VIDEO_ID_EXTRACTED=$VIDEO_ID" >> $GITHUB_ENV
+          echo "Start: ${{ github.event.client_payload.start_time }}s - End: ${{ github.event.client_payload.end_time }}s"
 
-      - name: ⚙️ Install Python & youtube-transcript-api
-        run: |
-          pip3 install "youtube-transcript-api>=1.2.0" --break-system-packages
-
-      - name: 📝 Ambil Transcript YouTube
-        run: |
-          python3 << 'EOF'
-          import json, os, sys
-          from youtube_transcript_api import YouTubeTranscriptApi
-          
-          video_id = os.environ.get('VIDEO_ID_EXTRACTED', '')
-          
-          try:
-              ytt_api = YouTubeTranscriptApi()
-              transcript_list = ytt_api.list(video_id)
-              
-              try:
-                  transcript_obj = transcript_list.find_transcript(['id', 'en'])
-              except Exception:
-                  transcript_obj = next(iter(transcript_list))
-              
-              raw = transcript_obj.fetch().to_raw_data()
-              
-              formatted = [
-                  {"text": i['text'], "offset": i['start'], "duration": i['duration']}
-                  for i in raw
-              ]
-              result = {"success": True, "videoId": video_id, "transcript": formatted}
-          except Exception as e:
-              result = {"success": False, "error": str(e)}
-          
-          with open("transcript.json", "w", encoding="utf-8") as f:
-              json.dump(result, f, ensure_ascii=False, indent=2)
-          
-          print(json.dumps(result, ensure_ascii=False)[:500])
-          EOF
-        env:
-          VIDEO_ID_EXTRACTED: ${{ env.VIDEO_ID_EXTRACTED }}
-
-      - name: 📤 Upload Transcript Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: transcript-${{ github.run_id }}
-          path: transcript.json
-          retention-days: 1
-
-      - name: ⚙️ Install yt-dlp & FFmpeg
+      - name: ⚙️ Install FFmpeg
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
+
+      - name: ⚙️ Install Deno (JS runtime untuk yt-dlp)
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: ⚙️ Install yt-dlp
+        run: |
           sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
           sudo chmod a+rx /usr/local/bin/yt-dlp
+          yt-dlp --version
 
-      - name: ✂️ Download & Cut Video (Cepat)
+      - name: ✂️ Download & Cut Video
         run: |
-          yt-dlp -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
-          --download-sections "*${{ github.event.client_payload.start_time }}-${{ github.event.client_payload.end_time }}" \
-          --force-keyframes-at-cuts \
-          -o "output_clip.mp4" \
-          "${{ github.event.client_payload.video_url }}"
+          PROXY_ARG=""
+          if [ -n "${{ secrets.WEBSHARE_PROXY_URL }}" ]; then
+            PROXY_ARG="--proxy ${{ secrets.WEBSHARE_PROXY_URL }}"
+            echo "Menggunakan proxy untuk download..."
+          fi
+
+          MAX_RETRIES=3
+          for attempt in $(seq 1 $MAX_RETRIES); do
+            echo "Attempt $attempt of $MAX_RETRIES..."
+            
+            if yt-dlp -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
+              $PROXY_ARG \
+              --download-sections "*${{ github.event.client_payload.start_time }}-${{ github.event.client_payload.end_time }}" \
+              --force-keyframes-at-cuts \
+              --extractor-retries 3 \
+              --retry-sleep extractor 5 \
+              --no-check-certificates \
+              -o "output_clip.mp4" \
+              "${{ github.event.client_payload.video_url }}"; then
+              echo "Download berhasil!"
+              break
+            else
+              echo "Attempt $attempt gagal..."
+              if [ "$attempt" -eq "$MAX_RETRIES" ]; then
+                echo "Semua attempt gagal!"
+                exit 1
+              fi
+              SLEEP_TIME=$((attempt * 10))
+              echo "Retry dalam ${SLEEP_TIME} detik..."
+              sleep $SLEEP_TIME
+            fi
+          done
 
       - name: 📤 Upload Hasil Video
         uses: actions/upload-artifact@v4
         with:
-          name: clip-${{ github.event.client_payload.start_time }}
+          name: clip-${{ github.event.client_payload.start_time }}-${{ github.event.client_payload.end_time }}
           path: output_clip.mp4
+          retention-days: 7
