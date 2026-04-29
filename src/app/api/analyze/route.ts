@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { AnalyzeResult, ClipSegment } from "@/types/clip";
 
-const PROMPT = `You are a viral content strategist. You will be provided with a YouTube transcript where each line starts with a timestamp in brackets, like this: [120.5] Here is the text.
+function buildPrompt(videoTitle: string, videoAuthor: string): string {
+  const videoContext = videoTitle || videoAuthor
+    ? `\nVideo Context:\n- Title: ${videoTitle}\n- Channel: ${videoAuthor}\n`
+    : "";
+
+  return `You are a viral content strategist. You will be provided with a YouTube transcript where each line starts with a timestamp in brackets, like this: [120.5] Here is the text.${videoContext}
 
 Find exactly 10 engaging segments that would make great YouTube Shorts (30-60 seconds each).
 
@@ -9,22 +14,35 @@ CRITICAL RULES:
 Your 'start_time' and 'end_time' MUST be extracted directly from the [timestamp] brackets present in the text at the beginning and end of your chosen segment.
 Do not guess or make up the timestamps.
 
+For each segment, also provide:
+- "trending_score": a number from 1-10 indicating viral potential (10 = most viral)
+- "viral_rating": a short label like "🔥 Viral", "⚡ Trending", "📈 Rising", or "💡 Insight"
+- "video_title": the original video title ("${videoTitle}")
+- "author": the channel name ("${videoAuthor}")
+
 Return ONLY a valid JSON array — no markdown, no code fences, no extra text. Each element must match this schema exactly:
 {
   "id": "unique-id-string",
-  "title": "Short catchy title",
+  "title": "Short catchy title for this clip",
   "hook": "The compelling opening sentence",
   "reason": "Why this clip will go viral",
   "start_time": 120.5,
-  "end_time": 165.0
+  "end_time": 165.0,
+  "video_title": "${videoTitle}",
+  "author": "${videoAuthor}",
+  "trending_score": 8,
+  "viral_rating": "🔥 Viral"
 }
 
 Transcript:
 `;
+}
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
   const transcript: string = body.transcript;
+  const videoTitle: string = body.videoTitle || "";
+  const videoAuthor: string = body.videoAuthor || "";
 
   if (!transcript || typeof transcript !== "string") {
     return NextResponse.json<AnalyzeResult>(
@@ -56,7 +74,7 @@ export async function POST(request: NextRequest) {
           messages: [
             {
               role: "user",
-              content: PROMPT + transcript,
+              content: buildPrompt(videoTitle, videoAuthor) + transcript,
             },
           ],
           stream: false,

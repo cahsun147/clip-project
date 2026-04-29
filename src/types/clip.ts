@@ -17,6 +17,13 @@ export interface TranscriptError {
 
 export type TranscriptResult = TranscriptResponse | TranscriptError;
 
+export interface VideoMeta {
+  title: string;
+  author: string;
+  authorUrl: string;
+  thumbnail: string;
+}
+
 export interface ClipSegment {
   id: string;
   title: string;
@@ -24,6 +31,10 @@ export interface ClipSegment {
   reason: string;
   start_time: number;
   end_time: number;
+  video_title: string;
+  author: string;
+  trending_score: number;
+  viral_rating: string;
 }
 
 export interface AnalyzeResponse {

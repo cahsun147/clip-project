@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { ClipSegment, TranscriptLine } from "@/types/clip";
+import type { ClipSegment, TranscriptLine, VideoMeta } from "@/types/clip";
 
 type Step = "idle" | "fetching" | "analyzing" | "done" | "error";
 
@@ -20,7 +20,7 @@ export default function Home() {
   const [triggeringId, setTriggeringId] = useState<string | null>(null);
   const [triggeredIds, setTriggeredIds] = useState<Set<string>>(new Set());
   const [notification, setNotification] = useState("");
-  const [useLocal, setUseLocal] = useState(false);
+  const [videoMeta, setVideoMeta] = useState<VideoMeta | null>(null);
 
   async function handleCutClip(clip: ClipSegment) {
     setTriggeringId(clip.id);
@@ -59,83 +59,38 @@ export default function Home() {
     setTranscript(null);
 
     try {
-      let transcriptData: TranscriptLine[] | null = null;
+      // Ambil transcript via Flask lokal
+      const tRes = await fetch("/api/transcript-local", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: url.trim() }),
+      });
 
-      if (useLocal) {
-        // === LOCAL MODE: langsung ambil transcript via Flask ===
-        const tRes = await fetch("/api/transcript-local", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: url.trim() }),
-        });
+      const tData = await tRes.json();
 
-        const tData = await tRes.json();
-
-        if (!tData.success) {
-          setStep("error");
-          setErrorMsg(tData.error);
-          return;
-        }
-
-        transcriptData = tData.transcript;
-      } else {
-        // === GITHUB ACTIONS MODE: trigger + polling ===
-        const tRes = await fetch("/api/transcript", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: url.trim() }),
-        });
-
-        const tData = await tRes.json();
-
-        if (!tData.success) {
-          setStep("error");
-          setErrorMsg(tData.error);
-          return;
-        }
-
-        const requestId = tData.requestId;
-
-        // Poll until transcript is ready
-        const maxAttempts = 60;
-        let attempt = 0;
-
-        while (attempt < maxAttempts) {
-          await new Promise((r) => setTimeout(r, 3000));
-          attempt++;
-
-          const rRes = await fetch(`/api/transcript-result?requestId=${requestId}`);
-          const rData = await rRes.json();
-
-          if (rData.status === "done" && rData.success && Array.isArray(rData.transcript)) {
-            transcriptData = rData.transcript;
-            break;
-          }
-
-          if (rData.status === "done" && (!rData.transcript || !Array.isArray(rData.transcript))) {
-            setStep("error");
-            setErrorMsg(rData.error || "Transcript kosong atau format tidak valid");
-            return;
-          }
-
-          if (rData.status === "failed" || rData.status === "error") {
-            setStep("error");
-            setErrorMsg(rData.error || "Gagal mengambil transcript dari GitHub Actions");
-            return;
-          }
-        }
-
-        if (!transcriptData) {
-          setStep("error");
-          setErrorMsg("Timeout: Transcript fetch memakan waktu terlalu lama");
-          return;
-        }
+      if (!tData.success) {
+        setStep("error");
+        setErrorMsg(tData.error);
+        return;
       }
+
+      const transcriptData: TranscriptLine[] = tData.transcript;
 
       setTranscript(transcriptData);
       setStep("analyzing");
 
-      // 3. Analyze with Gemini
+      // Fetch video metadata (parallel with analyze prep)
+      const metaRes = await fetch("/api/video-meta", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: url.trim() }),
+      });
+      const metaData = await metaRes.json();
+      if (metaData.success) {
+        setVideoMeta(metaData);
+      }
+
+      // Analyze with AI
       const formattedTranscript = transcriptData
         .map((l: TranscriptLine) => `[${l.offset}] ${l.text}`)
         .join("\n");
@@ -143,7 +98,11 @@ export default function Home() {
       const aRes = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transcript: formattedTranscript }),
+        body: JSON.stringify({
+          transcript: formattedTranscript,
+          videoTitle: metaData.success ? metaData.title : "",
+          videoAuthor: metaData.success ? metaData.author : "",
+        }),
       });
 
       const aData = await aRes.json();
@@ -171,25 +130,6 @@ export default function Home() {
       <p className="text-gray-500 mb-10 text-center max-w-md">
         Temukan momen viral dari video YouTube dan ubah jadi Shorts.
       </p>
-
-      {/* Mode Toggle */}
-      <div className="w-full max-w-xl flex items-center justify-end gap-2 mb-3">
-        <span className={`text-xs ${!useLocal ? "text-cyan-400" : "text-gray-600"}`}>
-          GitHub Actions
-        </span>
-        <button
-          onClick={() => setUseLocal((v) => !v)}
-          className={`relative w-10 h-5 rounded-full transition-colors ${useLocal ? "bg-green-500" : "bg-gray-700"}`}
-          title={useLocal ? "Mode: Local (Flask)" : "Mode: GitHub Actions"}
-        >
-          <span
-            className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${useLocal ? "translate-x-5" : ""}`}
-          />
-        </button>
-        <span className={`text-xs ${useLocal ? "text-green-400" : "text-gray-600"}`}>
-          Local (Flask)
-        </span>
-      </div>
 
       {/* Input */}
       <div className="w-full max-w-xl flex gap-3">
@@ -239,10 +179,8 @@ export default function Home() {
           </svg>
           <span className="text-sm">
             {step === "fetching"
-              ? useLocal
-                ? "Mengambil transcript via Flask lokal..."
-                : "Mengambil transcript via GitHub Actions (±15-30 detik)..."
-              : "Gemini sedang menganalisis segmen viral..."}
+              ? "Mengambil transcript via Flask lokal..."
+              : "AI sedang menganalisis segmen viral..."}
           </span>
         </div>
       )}
@@ -273,9 +211,35 @@ export default function Home() {
         </div>
       )}
 
+      {/* Video Info Header */}
+      {step === "done" && videoMeta && (
+        <div className="mt-10 w-full max-w-3xl rounded-xl border border-gray-800 bg-gray-900/50 backdrop-blur-sm p-5 flex gap-4 items-start">
+          {videoMeta.thumbnail && (
+            <img
+              src={videoMeta.thumbnail}
+              alt={videoMeta.title}
+              className="w-32 h-auto rounded-lg object-cover shrink-0"
+            />
+          )}
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold text-gray-200 line-clamp-2">
+              {videoMeta.title}
+            </h2>
+            <a
+              href={videoMeta.authorUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-cyan-400 hover:underline mt-1 block"
+            >
+              {videoMeta.author}
+            </a>
+          </div>
+        </div>
+      )}
+
       {/* Clip Cards */}
       {step === "done" && clips.length > 0 && (
-        <div className="mt-10 w-full max-w-3xl">
+        <div className="mt-6 w-full max-w-3xl">
           <h2 className="text-lg font-semibold mb-4 text-gray-300">
             {clips.length} Segmen Viral Ditemukan
           </h2>
@@ -289,6 +253,20 @@ export default function Home() {
                   <span className="text-xs font-mono text-cyan-400">
                     #{i + 1}
                   </span>
+                  <div className="flex items-center gap-2">
+                    {clip.viral_rating && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-300">
+                        {clip.viral_rating}
+                      </span>
+                    )}
+                    {clip.trending_score && (
+                      <span className={`text-xs font-bold ${clip.trending_score >= 8 ? "text-green-400" : clip.trending_score >= 5 ? "text-yellow-400" : "text-gray-500"}`}>
+                        {clip.trending_score}/10
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between mb-1">
                   <span className="text-xs text-gray-500">
                     {formatDuration(clip.start_time)} →{" "}
                     {formatDuration(clip.end_time)}{" "}
