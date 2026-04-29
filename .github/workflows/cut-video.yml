@@ -36,29 +36,32 @@ jobs:
           END="${{ github.event.client_payload.end_time }}"
           VIDEO_URL="${{ github.event.client_payload.video_url }}"
 
-          download_video() {
-            local proxy_arg="$1"
-            local label="$2"
-            echo "=== Mencoba: $label ==="
-            yt-dlp -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
-              $proxy_arg \
+          # Strategi 1: Tanpa proxy (deno sudah diinstall, yt-dlp bisa bypass bot detection)
+          echo "=== Mencoba: Tanpa Proxy ==="
+          if yt-dlp -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
               --download-sections "*${START}-${END}" \
               --force-keyframes-at-cuts \
               --extractor-retries 3 \
               --retry-sleep extractor:5 \
               -o "output_clip.mp4" \
-              "$VIDEO_URL"
-          }
-
-          # Strategi 1: Tanpa proxy (deno sudah diinstall, yt-dlp bisa bypass bot detection)
-          if download_video "" "Tanpa Proxy"; then
+              "$VIDEO_URL"; then
             echo "Download berhasil tanpa proxy!"
           else
             echo "Tanpa proxy gagal, mencoba dengan proxy..."
 
-            # Strategi 2: Dengan proxy (jika secret tersedia)
+            # Strategi 2: Dengan proxy via HTTPS_PROXY env var
+            # urllib menangani proxy auth dengan benar via env var, bukan --proxy flag
             if [ -n "${{ secrets.WEBSHARE_PROXY_URL }}" ]; then
-              if download_video "--proxy ${{ secrets.WEBSHARE_PROXY_URL }}" "Dengan Proxy"; then
+              echo "=== Mencoba: Dengan Proxy (env var) ==="
+              export HTTPS_PROXY="${{ secrets.WEBSHARE_PROXY_URL }}"
+              export HTTP_PROXY="${{ secrets.WEBSHARE_PROXY_URL }}"
+              if yt-dlp -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
+                  --download-sections "*${START}-${END}" \
+                  --force-keyframes-at-cuts \
+                  --extractor-retries 3 \
+                  --retry-sleep extractor:5 \
+                  -o "output_clip.mp4" \
+                  "$VIDEO_URL"; then
                 echo "Download berhasil dengan proxy!"
               else
                 echo "Proxy juga gagal!"
