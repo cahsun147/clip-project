@@ -47,7 +47,7 @@ jobs:
               --download-sections "*${{ github.event.client_payload.start_time }}-${{ github.event.client_payload.end_time }}" \
               --force-keyframes-at-cuts \
               --extractor-retries 3 \
-              --retry-sleep extractor 5 \
+              --retry-sleep extractor:5 \
               --no-check-certificates \
               -o "output_clip.mp4" \
               "${{ github.event.client_payload.video_url }}"; then
