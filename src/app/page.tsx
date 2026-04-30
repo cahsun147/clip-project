@@ -59,7 +59,7 @@ export default function Home() {
     setTranscript(null);
 
     try {
-      // Ambil transcript via Flask lokal
+      // 1. Ambil transcript via Flask lokal
       const tRes = await fetch("/api/transcript-local", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -79,18 +79,7 @@ export default function Home() {
       setTranscript(transcriptData);
       setStep("analyzing");
 
-      // Fetch video metadata (parallel with analyze prep)
-      const metaRes = await fetch("/api/video-meta", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: url.trim() }),
-      });
-      const metaData = await metaRes.json();
-      if (metaData.success) {
-        setVideoMeta(metaData);
-      }
-
-      // Analyze with AI
+      // 2. Analyze with Gemini
       const formattedTranscript = transcriptData
         .map((l: TranscriptLine) => `[${l.offset}] ${l.text}`)
         .join("\n");
@@ -98,11 +87,7 @@ export default function Home() {
       const aRes = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          transcript: formattedTranscript,
-          videoTitle: metaData.success ? metaData.title : "",
-          videoAuthor: metaData.success ? metaData.author : "",
-        }),
+        body: JSON.stringify({ transcript: formattedTranscript }),
       });
 
       const aData = await aRes.json();
@@ -180,7 +165,7 @@ export default function Home() {
           <span className="text-sm">
             {step === "fetching"
               ? "Mengambil transcript via Flask lokal..."
-              : "AI sedang menganalisis segmen viral..."}
+              : "Gemini sedang menganalisis segmen viral..."}
           </span>
         </div>
       )}
