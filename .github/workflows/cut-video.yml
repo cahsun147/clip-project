@@ -44,7 +44,6 @@ jobs:
           END_TIME="${{ github.event.client_payload.end_time }}"
           VIDEO_URL="${{ github.event.client_payload.video_url }}"
           
-          # 1. Mengambil SATU proxy acak dari Webshare
           PROXY_RAW=$(shuf -n 1 proxies.txt)
           IP=$(echo "$PROXY_RAW" | cut -d':' -f1)
           PORT=$(echo "$PROXY_RAW" | cut -d':' -f2)
@@ -55,11 +54,11 @@ jobs:
           echo "Cutting video from $START_TIME to $END_TIME..."
           echo "Using Proxy: $IP"
           
-          # COMBO PAMUNGKAS: Proxy (Sembunyikan IP) + Cookies (Bypass Umur/Region) + Impersonate Chrome
+          # MENGHAPUS 'tv' client dan menggunakan 'web_creator' untuk menghindari eksperimen DRM
           yt-dlp --proxy "$PROXY_URL" \
                  --cookies cookies.txt \
                  --impersonate Chrome \
-                 --extractor-args "youtube:player_client=tv,web" \
+                 --extractor-args "youtube:player_client=web_creator,web" \
                  --format "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
                  --download-sections "*$START_TIME-$END_TIME" \
                  --force-keyframes-at-cuts \
