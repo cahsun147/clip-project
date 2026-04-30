@@ -1,3 +1,10 @@
+name: Cut Video Clips
+
+# WAJIB SAMA: "types" ini harus sama persis dengan yang dikirim oleh trigger-action/route.ts kamu
+on:
+  repository_dispatch:
+    types: [cut-video] 
+
 jobs:
   cut_video_job:
     runs-on: ubuntu-latest
