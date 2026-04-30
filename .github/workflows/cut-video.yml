@@ -26,8 +26,12 @@ jobs:
 
       - name: Create cookies.txt securely
         run: |
-          # Menyuntikkan rahasia cookie ke dalam file teks lokal di mesin runner
-          echo "${{ secrets.YOUTUBE_COOKIES }}" > cookies.txt
+          cat << 'EOF' > cookies.txt
+          ${{ secrets.YOUTUBE_COOKIES }}
+          EOF
+          
+          # Optional: Verifikasi apakah file berhasil dibuat (hanya menampilkan 2 baris pertama)
+          head -n 2 cookies.txt
 
       - name: Download and Cut Video
         run: |
