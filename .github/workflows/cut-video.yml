@@ -3,20 +3,6 @@ name: Cut Video Clips
 on:
   repository_dispatch:
     types: [cut_video]
-  workflow_dispatch:
-    inputs:
-      video_url:
-        description: 'YouTube URL'
-        required: true
-      start_time:
-        description: 'Start time in seconds'
-        required: true
-      end_time:
-        description: 'End time in seconds'
-        required: true
-      title:
-        description: 'Clip title'
-        required: true
 
 jobs:
   process-clip:
