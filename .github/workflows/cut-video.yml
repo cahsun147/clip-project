@@ -1,120 +1,52 @@
 name: Cut Video Clips
 
+# WAJIB SAMA: "types" ini harus sama persis dengan yang dikirim oleh trigger-action/route.ts kamu
 on:
   repository_dispatch:
-    types: [cut_video]
+    types: [cut-video] 
 
 jobs:
-  process-clip:
+  cut_video_job:
     runs-on: ubuntu-latest
+
     steps:
-      - name: 📥 Checkout repo
-        uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v3
 
-      - name: 🚀 Menerima Sinyal Vercel
-        run: |
-          echo "Memproses video: ${{ github.event.client_payload.title }}"
-          echo "URL: ${{ github.event.client_payload.video_url }}"
-          echo "Start: ${{ github.event.client_payload.start_time }}s - End: ${{ github.event.client_payload.end_time }}s"
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
 
-      - name: ⚙️ Install FFmpeg
+      - name: Install FFmpeg and yt-dlp
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
+          pip install yt-dlp
 
-      - name: ⚙️ Install Deno (JS runtime untuk yt-dlp)
-        uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-
-      - name: ⚙️ Install yt-dlp
+      - name: Create cookies.txt securely
         run: |
-          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
-          sudo chmod a+rx /usr/local/bin/yt-dlp
-          yt-dlp --version
+          # Menyuntikkan rahasia cookie ke dalam file teks lokal di mesin runner
+          echo "${{ secrets.YOUTUBE_COOKIES }}" > cookies.txt
 
-      - name: 🍪 Siapkan YouTube Cookies
-        if: ${{ secrets.YOUTUBE_COOKIES != '' }}
+      - name: Download and Cut Video
         run: |
-          cat << 'COOKIEEOF' > cookies.txt
-          ${{ secrets.YOUTUBE_COOKIES }}
-          COOKIEEOF
-          # Validasi format cookies
-          if head -1 cookies.txt | grep -q 'Netscape'; then
-            echo "Cookies file valid ($(wc -l < cookies.txt) baris)"
-          else
-            echo "WARNING: Header Netscape tidak ditemukan, menambahkan..."
-            sed -i '1i# Netscape HTTP Cookie File
-# https://curl.haxx.se/rfc/cookie_spec.html
-# This is a generated file! Do not edit.
-' cookies.txt
-          fi
-
-      - name: ✂️ Download & Cut Video
-        run: |
-          START="${{ github.event.client_payload.start_time }}"
-          END="${{ github.event.client_payload.end_time }}"
+          # Mengambil variabel payload yang dikirim dari web lokalmu
+          START_TIME="${{ github.event.client_payload.start_time }}"
+          END_TIME="${{ github.event.client_payload.end_time }}"
           VIDEO_URL="${{ github.event.client_payload.video_url }}"
-          COOKIES_FLAG=""
-          if [ -f cookies.txt ]; then
-            COOKIES_FLAG="--cookies cookies.txt"
-            echo "Menggunakan YouTube cookies"
-          fi
+          
+          echo "Cutting video from $START_TIME to $END_TIME..."
+          
+          # Eksekusi pemotongan menggunakan cookie untuk menghindari blokir
+          yt-dlp --cookies cookies.txt \
+                 --download-sections "*$START_TIME-$END_TIME" \
+                 --force-keyframes-at-cuts \
+                 -o "clip_result.mp4" \
+                 "$VIDEO_URL"
 
-          # Strategi 1: Cookies + tanpa proxy
-          if [ -n "$COOKIES_FLAG" ]; then
-            echo "=== Mencoba: Cookies + Tanpa Proxy ==="
-            if yt-dlp -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
-                $COOKIES_FLAG \
-                --download-sections "*${START}-${END}" \
-                --force-keyframes-at-cuts \
-                --extractor-retries 3 \
-                --retry-sleep extractor:5 \
-                -o "output_clip.mp4" \
-                "$VIDEO_URL"; then
-              echo "Download berhasil dengan cookies!"
-              exit 0
-            fi
-            echo "Cookies tanpa proxy gagal, mencoba cookies + proxy..."
-          fi
-
-          # Strategi 2: Cookies + proxy via env var
-          if [ -n "$COOKIES_FLAG" ] && [ -n "${{ secrets.WEBSHARE_PROXY_URL }}" ]; then
-            echo "=== Mencoba: Cookies + Proxy (env var) ==="
-            export HTTPS_PROXY="${{ secrets.WEBSHARE_PROXY_URL }}"
-            export HTTP_PROXY="${{ secrets.WEBSHARE_PROXY_URL }}"
-            if yt-dlp -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
-                $COOKIES_FLAG \
-                --download-sections "*${START}-${END}" \
-                --force-keyframes-at-cuts \
-                --extractor-retries 3 \
-                --retry-sleep extractor:5 \
-                -o "output_clip.mp4" \
-                "$VIDEO_URL"; then
-              echo "Download berhasil dengan cookies + proxy!"
-              exit 0
-            fi
-            echo "Cookies + proxy juga gagal!"
-          fi
-
-          # Strategi 3: Tanpa cookies, tanpa proxy (fallback terakhir)
-          echo "=== Mencoba: Tanpa Cookies, Tanpa Proxy ==="
-          if yt-dlp -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
-              --download-sections "*${START}-${END}" \
-              --force-keyframes-at-cuts \
-              --extractor-retries 3 \
-              --retry-sleep extractor:5 \
-              -o "output_clip.mp4" \
-              "$VIDEO_URL"; then
-            echo "Download berhasil tanpa cookies!"
-          else
-            echo "Semua strategi gagal!"
-            exit 1
-          fi
-
-      - name: 📤 Upload Hasil Video
-        uses: actions/upload-artifact@v4
+      - name: Upload Clipped Video as Artifact
+        uses: actions/upload-artifact@v3
         with:
-          name: clip-${{ github.event.client_payload.start_time }}-${{ github.event.client_payload.end_time }}
-          path: output_clip.mp4
-          retention-days: 7
+          name: clipped-video
+          path: clip_result.mp4
