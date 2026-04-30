@@ -48,9 +48,8 @@ jobs:
           
           echo "Cutting video from $START_TIME to $END_TIME..."
           
-          # Menyamar sebagai Android dan memaksa format MP4
+          # Menggunakan cookies dengan client web default (dibantu Node.js)
           yt-dlp --cookies cookies.txt \
-                 --extractor-args "youtube:player_client=android" \
                  --format "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
                  --download-sections "*$START_TIME-$END_TIME" \
                  --force-keyframes-at-cuts \
