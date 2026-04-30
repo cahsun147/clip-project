@@ -18,14 +18,13 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install FFmpeg, Node.js, and bleeding-edge yt-dlp
+      - name: Install FFmpeg, Node.js, and yt-dlp
         run: |
           sudo apt-get update
-          # Menginstal Node.js untuk memecahkan cipher YouTube
           sudo apt-get install -y ffmpeg nodejs
           python -m pip install --upgrade pip
-          # Menginstal yt-dlp versi paling mutakhir (pre-release)
-          pip install -U --pre yt-dlp
+          # Menginstal yt-dlp beserta plugin curl-cffi untuk memanipulasi TLS Fingerprint
+          pip install -U --pre "yt-dlp[default,curl-cffi]"
 
       - name: Create cookies.txt securely
         run: |
@@ -48,8 +47,10 @@ jobs:
           
           echo "Cutting video from $START_TIME to $END_TIME..."
           
-          # Menggunakan cookies dengan client web default (dibantu Node.js)
+          # Menyamar sebagai Google Chrome di level jaringan dan memprioritaskan API TV/Web
           yt-dlp --cookies cookies.txt \
+                 --impersonate Chrome \
+                 --extractor-args "youtube:player_client=tv,web" \
                  --format "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
                  --download-sections "*$START_TIME-$END_TIME" \
                  --force-keyframes-at-cuts \
