@@ -47,13 +47,13 @@ jobs:
           
           echo "Cutting video from $START_TIME to $END_TIME..."
           
-          # Menyamar sebagai Google Chrome di level jaringan dan memprioritaskan API TV/Web
-          yt-dlp --cookies cookies.txt \
-                 --impersonate Chrome \
-                 --extractor-args "youtube:player_client=tv,web" \
-                 --format "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
+          # Hapus penggunaan cookie (karena akun sedang kena eksperimen SABR)
+          # Fokus ke klien 'web' standar tanpa penyamaran aneh
+          yt-dlp --extractor-args "youtube:player_client=web" \
+                 --format "b[ext=mp4]" \
                  --download-sections "*$START_TIME-$END_TIME" \
                  --force-keyframes-at-cuts \
+                 --force-ipv4 \
                  -o "clip_result.mp4" \
                  "$VIDEO_URL"
 
