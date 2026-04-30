@@ -54,7 +54,7 @@ jobs:
                  "$VIDEO_URL"
 
       - name: Upload Clipped Video as Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: clipped-video
           path: clip_result.mp4
