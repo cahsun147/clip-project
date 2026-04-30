@@ -18,11 +18,14 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install FFmpeg and yt-dlp
+      - name: Install FFmpeg, Node.js, and bleeding-edge yt-dlp
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
-          pip install yt-dlp
+          # Menginstal Node.js untuk memecahkan cipher YouTube
+          sudo apt-get install -y ffmpeg nodejs
+          python -m pip install --upgrade pip
+          # Menginstal yt-dlp versi paling mutakhir (pre-release)
+          pip install -U --pre yt-dlp
 
       - name: Create cookies.txt securely
         run: |
@@ -39,15 +42,16 @@ jobs:
 
       - name: Download and Cut Video
         run: |
-          # Mengambil variabel payload yang dikirim dari web lokalmu
           START_TIME="${{ github.event.client_payload.start_time }}"
           END_TIME="${{ github.event.client_payload.end_time }}"
           VIDEO_URL="${{ github.event.client_payload.video_url }}"
           
           echo "Cutting video from $START_TIME to $END_TIME..."
           
-          # Eksekusi pemotongan menggunakan cookie untuk menghindari blokir
+          # Menyamar sebagai Android dan memaksa format MP4
           yt-dlp --cookies cookies.txt \
+                 --extractor-args "youtube:player_client=android" \
+                 --format "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
                  --download-sections "*$START_TIME-$END_TIME" \
                  --force-keyframes-at-cuts \
                  -o "clip_result.mp4" \
