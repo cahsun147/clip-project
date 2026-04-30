@@ -47,13 +47,14 @@ jobs:
           
           echo "Cutting video from $START_TIME to $END_TIME..."
           
-          # Hapus penggunaan cookie (karena akun sedang kena eksperimen SABR)
-          # Fokus ke klien 'web' standar tanpa penyamaran aneh
-          yt-dlp --extractor-args "youtube:player_client=web" \
-                 --format "b[ext=mp4]" \
+          # Menggunakan cookie segar + Penyamaran Klien iOS/Mobile Web
+          # Klien ini dikenal paling kebal terhadap 'Sign in to confirm' dan 'n-challenge'
+          yt-dlp --cookies cookies.txt \
+                 --impersonate Chrome \
+                 --extractor-args "youtube:player_client=ios,mweb,web" \
+                 --format "bestvideo[ext=mp4]+bestaudio[ext=m4a]/b[ext=mp4]/best" \
                  --download-sections "*$START_TIME-$END_TIME" \
                  --force-keyframes-at-cuts \
-                 --force-ipv4 \
                  -o "clip_result.mp4" \
                  "$VIDEO_URL"
 
