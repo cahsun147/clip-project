@@ -18,12 +18,25 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install FFmpeg and yt-dlp
+      - name: Install FFmpeg, Node.js, and yt-dlp
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg nodejs
           python -m pip install --upgrade pip
+          # yt-dlp versi pre-release + curl-cffi untuk penyamaran Browser
           pip install -U --pre "yt-dlp[default,curl-cffi]"
+
+      - name: Create cookies.txt securely
+        run: |
+          # KITA BAWA KEMBALI COOKIES!
+          echo "# Netscape HTTP Cookie File" > cookies.txt
+          echo "# https://curl.haxx.se/rfc/cookie_spec.html" >> cookies.txt
+          echo "# This is a generated file! Do not edit." >> cookies.txt
+          echo "" >> cookies.txt
+          
+          cat << 'EOF' >> cookies.txt
+          ${{ secrets.YOUTUBE_COOKIES }}
+          EOF
 
       - name: Download and Cut Video
         run: |
@@ -31,10 +44,8 @@ jobs:
           END_TIME="${{ github.event.client_payload.end_time }}"
           VIDEO_URL="${{ github.event.client_payload.video_url }}"
           
-          # 1. Mengambil SATU proxy acak dari file proxies.txt milikmu
+          # 1. Mengambil SATU proxy acak dari Webshare
           PROXY_RAW=$(shuf -n 1 proxies.txt)
-          
-          # 2. Membedah format Webshare (IP:PORT:USER:PASS)
           IP=$(echo "$PROXY_RAW" | cut -d':' -f1)
           PORT=$(echo "$PROXY_RAW" | cut -d':' -f2)
           USER=$(echo "$PROXY_RAW" | cut -d':' -f3)
@@ -42,11 +53,13 @@ jobs:
           PROXY_URL="http://$USER:$PASS@$IP:$PORT"
           
           echo "Cutting video from $START_TIME to $END_TIME..."
-          echo "Merutekan yt-dlp melalui Webshare Proxy untuk menyembunyikan IP GitHub..."
+          echo "Using Proxy: $IP"
           
-          # 3. Eksekusi menggunakan Proxy dan klien iOS (Tanpa Cookie!)
+          # COMBO PAMUNGKAS: Proxy (Sembunyikan IP) + Cookies (Bypass Umur/Region) + Impersonate Chrome
           yt-dlp --proxy "$PROXY_URL" \
-                 --extractor-args "youtube:player_client=ios,android" \
+                 --cookies cookies.txt \
+                 --impersonate Chrome \
+                 --extractor-args "youtube:player_client=tv,web" \
                  --format "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
                  --download-sections "*$START_TIME-$END_TIME" \
                  --force-keyframes-at-cuts \
