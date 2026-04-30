@@ -26,12 +26,16 @@ jobs:
 
       - name: Create cookies.txt securely
         run: |
-          cat << 'EOF' > cookies.txt
+          # Memaksa pembuatan header Netscape yang valid secara manual
+          echo "# Netscape HTTP Cookie File" > cookies.txt
+          echo "# https://curl.haxx.se/rfc/cookie_spec.html" >> cookies.txt
+          echo "# This is a generated file! Do not edit." >> cookies.txt
+          echo "" >> cookies.txt
+          
+          # Menambahkan isi secret ke bawahnya dengan aman
+          cat << 'EOF' >> cookies.txt
           ${{ secrets.YOUTUBE_COOKIES }}
           EOF
-          
-          # Optional: Verifikasi apakah file berhasil dibuat (hanya menampilkan 2 baris pertama)
-          head -n 2 cookies.txt
 
       - name: Download and Cut Video
         run: |
